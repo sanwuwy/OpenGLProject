@@ -145,15 +145,19 @@ public class FrameBuffersRenderer extends BaseRenderer {
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, frameBuffer);
         super.onDrawFrame(gl);
 
+        // 在自定义的帧缓冲对象上进行渲染，目的是为了得到正确的帧缓冲纹理对象
         drawFloor();
         drawCube();
 
-        // 重新绑定到系统的帧缓冲
+        // 重新绑定到系统的帧缓冲，以便后续将渲染结果显示在屏幕上
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0);
+
+        // 禁用深度测试，清除颜色为白色，清除颜色缓冲区和深度缓冲区，执行完之后屏幕是白色
         GLES20.glDisable(GLES20.GL_DEPTH_TEST);
         GLES20.glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
-        // 绘制我们自定义帧缓冲的内容
+
+        // 将自定义帧缓冲对象的纹理对象进行后期处理或直接显示在屏幕上
         drawFrameBuffers();
 
         release();
