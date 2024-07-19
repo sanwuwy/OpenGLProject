@@ -93,6 +93,8 @@ public class FrameBuffersRenderer extends BaseRenderer {
         this.type = type;
         vertexShaderCode = OpenGLUtil.getShaderFromResources(context, R.raw.texture_vertext);
         fragmentShaderCode = OpenGLUtil.getShaderFromResources(context, R.raw.texture_fragment);
+        vertexFlipShader = OpenGLUtil.getShaderFromResources(context, R.raw.texture_vertext);
+        fragmentFlipShader = OpenGLUtil.getShaderFromResources(context, R.raw.texture_fragment);
         vertexFrameShader = OpenGLUtil.getShaderFromResources(context, R.raw.advanced_opengl_frame_buffers_vertex);
         fragmentFrameShader = OpenGLUtil.getShaderFromResources(context, R.raw.advanced_opengl_frame_buffers_fragment);
     }
@@ -101,11 +103,14 @@ public class FrameBuffersRenderer extends BaseRenderer {
 
     private final float[] mMVPMatrix = new float[16], projectionMatrix = new float[16],
             viewMatrix = new float[16], modelMatrix = new float[16];
+    private final float[] flipModelMatrix = new float[16];
     private int cubeTexture, floorTexture;
     private int frameBuffer, frameBufferTexture, renderBuffer;
+    private String vertexFlipShader, fragmentFlipShader;
     private String vertexFrameShader, fragmentFrameShader;
 
     private TextureRenderer textureRenderer;
+    private FlipRenderer flipRenderer;
     private FrameRenderer frameRenderer;
 
     @Override
@@ -122,6 +127,7 @@ public class FrameBuffersRenderer extends BaseRenderer {
         bitmap2.recycle();
 
         textureRenderer = new TextureRenderer();
+        flipRenderer = new FlipRenderer();
         frameRenderer = new FrameRenderer();
     }
 
@@ -137,17 +143,33 @@ public class FrameBuffersRenderer extends BaseRenderer {
 
     @Override
     public void onDrawFrame(GL10 gl) {
-        int[] result = OpenGLUtil.createFrameBuffer(disWidth, disHeight);
+        int[] result = OpenGLUtil.createFrameBuffer(0, 0, disWidth, disHeight);
         frameBufferTexture = result[0];
         frameBuffer = result[1];
         renderBuffer = result[2];
         // 绑定到我们自定义的帧缓冲
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, frameBuffer);
+        // 设置视口大小等
         super.onDrawFrame(gl);
 
         // 在自定义的帧缓冲对象上进行渲染，目的是为了得到正确的帧缓冲纹理对象
         drawFloor();
         drawCube();
+
+        // 重新绑定到系统的帧缓冲，以便后续将渲染结果显示在屏幕上
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0);
+
+        // 继续离屏渲染，增加旋转效果，可以复用 frameBuffer，重新绑定新的纹理
+        result = OpenGLUtil.createFrameBuffer(0, frameBuffer, disWidth, disHeight);
+        // 绑定到我们自定义的帧缓冲
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, frameBuffer);
+        super.onDrawFrame(gl);
+        // 使用上一个帧缓冲纹理对象作为输入，然后将处理结果存入新的纹理
+        flipTexture(frameBufferTexture);
+
+        frameBufferTexture = result[0];
+        frameBuffer = result[1];
+        renderBuffer = result[2];
 
         // 重新绑定到系统的帧缓冲，以便后续将渲染结果显示在屏幕上
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0);
@@ -187,6 +209,30 @@ public class FrameBuffersRenderer extends BaseRenderer {
 
         public TextureRenderer() {
             shaderProgram = OpenGLUtil.createProgram(vertexShaderCode, fragmentShaderCode);
+            positionHandle = GLES20.glGetAttribLocation(shaderProgram, "aPosition");
+            TexCoordsHandle = GLES20.glGetAttribLocation(shaderProgram, "aTexCoords");
+            mMVPMatrixHandle = GLES20.glGetUniformLocation(shaderProgram, "uMVPMatrix");
+            texturePosHandle = GLES20.glGetUniformLocation(shaderProgram, "texture");
+        }
+
+        public void start() {
+            GLES20.glUseProgram(shaderProgram);
+            GLES20.glEnableVertexAttribArray(positionHandle);
+            GLES20.glEnableVertexAttribArray(TexCoordsHandle);
+        }
+
+        public void end() {
+            GLES20.glDisableVertexAttribArray(positionHandle);
+            GLES20.glDisableVertexAttribArray(TexCoordsHandle);
+            GLES20.glUseProgram(0);
+        }
+    }
+
+    private class FlipRenderer {
+        private int shaderProgram, positionHandle, TexCoordsHandle, mMVPMatrixHandle, texturePosHandle;
+
+        public FlipRenderer() {
+            shaderProgram = OpenGLUtil.createProgram(vertexFlipShader, fragmentFlipShader);
             positionHandle = GLES20.glGetAttribLocation(shaderProgram, "aPosition");
             TexCoordsHandle = GLES20.glGetAttribLocation(shaderProgram, "aTexCoords");
             mMVPMatrixHandle = GLES20.glGetUniformLocation(shaderProgram, "uMVPMatrix");
@@ -334,6 +380,25 @@ public class FrameBuffersRenderer extends BaseRenderer {
         GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, 36);
 
         textureRenderer.end();
+    }
+
+    private void flipTexture(int preTextureId) {
+        flipRenderer.start();
+        FloatBuffer quadVertexBuffer = OpenGLUtil.createFloatBuffer(quadVertices);
+        GLES20.glVertexAttribPointer(flipRenderer.positionHandle, 2, GLES20.GL_FLOAT,
+                false, 4 * 4, quadVertexBuffer);
+        quadVertexBuffer.position(2);
+        GLES20.glVertexAttribPointer(flipRenderer.TexCoordsHandle, 2, GLES20.GL_FLOAT,
+                false, 4 * 4, quadVertexBuffer);
+
+        Matrix.setIdentityM(flipModelMatrix, 0);
+        Matrix.rotateM(flipModelMatrix, 0, 180, 0f, 0f, 1f);
+        GLES20.glUniformMatrix4fv(flipRenderer.mMVPMatrixHandle, 1, false, flipModelMatrix, 0);
+        OpenGLUtil.bindTexture(flipRenderer.texturePosHandle, preTextureId, 0);
+
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, 6);
+
+        flipRenderer.end();
     }
 
     private void drawFrameBuffers() {

@@ -338,6 +338,13 @@ public class OpenGLUtil {
         return createShortBuffer(aar);
     }
 
+    public static int createTexture() {
+        int[] texture = new int[1];
+        GLES20.glGenTextures(1, texture, 0);
+        checkGlError("glGenTexture");
+        return texture[0];
+    }
+
     /**
      * 加载bitmap纹理
      * @param bitmap bitmap图片
@@ -485,11 +492,12 @@ public class OpenGLUtil {
      * @param height height
      * @return texture,
      */
-    public static int[] createFrameBuffer(int width, int height) {
+    public static int[] createFrameBuffer(int textureId, int frameBufferId, int width, int height) {
         int[] values = new int[1];
-        // 纹理缓冲
-        GLES20.glGenTextures(1, values, 0);
-        int mOffscreenTexture = values[0];   // expected > 0
+        int mOffscreenTexture = textureId;
+        if (mOffscreenTexture <= 0) {
+            mOffscreenTexture = createTexture();
+        }
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, mOffscreenTexture);
 
         // 创建纹理存储。
@@ -506,10 +514,13 @@ public class OpenGLUtil {
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T,
                 GLES20.GL_CLAMP_TO_EDGE);
 
-        // 自定义帧缓冲
-        GLES20.glGenFramebuffers(1, values, 0);
-        int mFramebuffer = values[0];    // expected > 0
-        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, mFramebuffer);
+        int mOffscreenFrameBuffer = frameBufferId;
+        if (mOffscreenFrameBuffer <= 0) {
+            // 自定义帧缓冲
+            GLES20.glGenFramebuffers(1, values, 0);
+            mOffscreenFrameBuffer = values[0];    // expected > 0
+        }
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, mOffscreenFrameBuffer);
 
         // 深度缓冲
         GLES20.glGenRenderbuffers(1, values, 0);
@@ -535,7 +546,7 @@ public class OpenGLUtil {
         // 切换到默认缓冲
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0);
 
-        return new int[]{mOffscreenTexture, mFramebuffer, mDepthBuffer};
+        return new int[]{mOffscreenTexture, mOffscreenFrameBuffer, mDepthBuffer};
     }
 
     /**
